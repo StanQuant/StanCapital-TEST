@@ -1,0 +1,63 @@
+# Stance Capital · S09 Observability 本機完整堆疊（D7）
+# 統一管線：App --OTLP/HTTP--> OTEL Collector --> Tempo(traces) / Prometheus(metrics) / Loki(logs)
+# 一鍵起停：docker compose -f infra/observability/docker-compose.yml up -d
+# 注意：本檔僅供本機/開發；正式環境用 K8s/Helm（留 BACKLOG）。
+name: stanquant-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      # 安全預設：只綁 127.0.0.1（loopback），不對外網暴露。正式環境走 K8s（留 BACKLOG）。
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP（App 用這個）
+      - "127.0.0.1:8889:8889"   # Prometheus exporter（供 Prometheus 抓）
+    depends_on:
+      - tempo
+      - loki
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  loki:
+    image: grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/config.yaml:ro
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./tempo/tempo-config.yaml:/etc/tempo/config.yaml:ro
+    ports:
+      - "127.0.0.1:3200:3200"   # Tempo HTTP/query
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      # 安全預設：關匿名、用帳密登入。本機預設 admin/admin，請以 env 覆寫；正式環境走 K8s secret。
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_ADMIN_USER=${GF_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo

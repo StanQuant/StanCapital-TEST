@@ -1,0 +1,183 @@
+# StanCapital-TEST · 持續整合（CI）
+# 每次 push 到 main 或開 PR：密鑰掃描、lint、型別檢查、架構依賴檢查、
+# 完整測試（含 PostgreSQL / Redis 整合測試，100% 覆蓋率閘門）、依賴漏洞稽核。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12.13"
+  UV_VERSION: "0.11.14"
+
+# 最小權限：只讀
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  secret-scan:
+    name: 密鑰掃描（gitleaks）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  python-lint:
+    name: Python · ruff lint + format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-extras --dev --locked
+      - name: ruff check
+        run: uv run ruff check src tests
+      - name: ruff format（check 模式）
+        run: uv run ruff format --check src tests
+
+  python-typecheck:
+    name: Python · mypy strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-extras --dev --locked
+      - name: mypy --strict
+        run: uv run mypy --strict src
+
+  python-import-lint:
+    name: Python · import-linter（分層依賴）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-extras --dev --locked
+      - name: import-linter
+        run: uv run lint-imports
+
+  python-test:
+    name: Python · pytest + 100% coverage
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: stanquant_test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: stanquant_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-extras --dev --locked
+      - name: 建立稽核低權測試帳號（audit 整合測試用）
+        env:
+          PGTARGET: postgresql://stanquant_test:test@localhost:5432/stanquant_test
+        run: |
+          uv run python - <<'PY'
+          import asyncio
+          import os
+          import asyncpg
+
+
+          async def main() -> None:
+              conn = await asyncpg.connect(os.environ["PGTARGET"])
+              try:
+                  exists = await conn.fetchval(
+                      "SELECT 1 FROM pg_roles WHERE rolname = 'stanquant_app'"
+                  )
+                  if not exists:
+                      await conn.execute(
+                          "CREATE ROLE stanquant_app LOGIN PASSWORD 'stanquant_app_dev'"
+                      )
+              finally:
+                  await conn.close()
+
+
+          asyncio.run(main())
+          PY
+      - name: pytest（含 100% 覆蓋率閘門）
+        env:
+          DATABASE_URL: postgresql://stanquant_test:test@localhost:5432/stanquant_test
+          TEST_DATABASE_URL: postgresql+asyncpg://stanquant_test:test@localhost:5432/stanquant_test
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          uv run pytest \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-branch \
+            --cov-fail-under=100 \
+            -ra
+
+  dep-audit:
+    name: 依賴漏洞稽核（pip-audit）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - name: pip-audit
+        run: |
+          uv sync --all-extras --locked
+          uv pip install pip-audit
+          uv export --all-extras --format requirements-txt --no-emit-project --no-hashes -o /tmp/req-audit.txt
+          uv run pip-audit --strict -r /tmp/req-audit.txt --disable-pip --no-deps
+
+  all-checks:
+    name: ✅ All Checks Passed
+    needs: [secret-scan, python-lint, python-typecheck, python-import-lint, python-test, dep-audit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 確認所有檢查通過
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'skipped') }}" == "true" ]]; then
+            echo "❌ 有檢查未通過"
+            exit 1
+          fi
+          echo "✅ 所有檢查通過"

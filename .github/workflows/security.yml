@@ -1,0 +1,49 @@
+# Stance Capital · 週期性安全掃描（排程）
+# 2026-06-18 新增（審查 H2）：依賴沒變、但外界揭露新 CVE 時，靠這支主動掃描發現。
+# 與 ci.yml 的 dep-audit 互補：ci.yml 在「依賴有變」時擋 PR；本檔在「世界變了」時主動告警。
+#
+# 觸發：每週日 00:00 UTC 自動跑 + 手動可隨時觸發。
+
+name: Security Scan（排程）
+
+on:
+  schedule:
+    # 每週日 00:00 UTC（台北週日 08:00）。新 CVE 一週內必被掃到。
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12.13"
+  UV_VERSION: "0.11.14"   # 2026-06-21 升級：0.5.11 太舊抓不到 Python 3.12.13（與 ci.yml 一致）
+
+jobs:
+  dependency-audit:
+    name: 依賴漏洞稽核（pip-audit）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - name: pip-audit（以鎖定依賴為準，排除專案本身）
+        run: |
+          uv sync --all-extras --locked
+          uv pip install pip-audit
+          uv export --all-extras --format requirements-txt --no-emit-project --no-hashes -o /tmp/req-audit.txt
+          uv run pip-audit --strict -r /tmp/req-audit.txt --disable-pip --no-deps
+
+  secret-scan:
+    name: 密鑰掃描（gitleaks 全歷史）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

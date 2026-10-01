@@ -1,0 +1,34 @@
+# 本機開發 / 整合測試用 PostgreSQL(非生產環境)
+# 啟動: docker compose -f infra/db/docker-compose.yml up -d --wait
+# 停止: docker compose -f infra/db/docker-compose.yml down
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stanquant-pg
+    environment:
+      POSTGRES_USER: stanquant
+      # 僅本機測試用的預設密碼，生產環境一律走 .env(紅燈關卡 #4)
+      POSTGRES_PASSWORD: change-me-local-dev-only
+      POSTGRES_DB: stanquant_test
+    ports:
+      # 用 5433 避開本機可能既有的 5432 PostgreSQL
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stanquant -d stanquant_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # S03 event-bus 整合測試用 Redis(非生產環境)
+  # 容器名加 app- 前綴：避免與舊專案 StanQuant_V3.0 遺留的 stanquant-redis(6379)撞名
+  redis:
+    image: redis:7-alpine
+    container_name: stanquant-app-redis
+    ports:
+      # 用 6380 避開本機可能既有的 6379 Redis
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

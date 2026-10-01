@@ -1,0 +1,42 @@
+# Prometheus 告警規則（D10）
+# 指標名以 OTEL Collector prometheus exporter 命名為準（counter 會帶 _total 後綴）。
+groups:
+  - name: stanquant-security
+    rules:
+      - alert: ATRCriticalDecisions
+        expr: increase(atr_decisions_total{level="critical"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ATR 出現 critical 級決策（tenant={{ $labels.tenant_id }}）"
+          description: "5 分鐘內出現 ATR critical 決策，請 SOC 介入。"
+
+      - alert: PolicyDenySpike
+        expr: increase(policy_decisions_total{decision="deny"}[5m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Policy deny 異常飆升（tenant={{ $labels.tenant_id }}）"
+          description: "5 分鐘內 policy deny 超過 20 次，可能遭探測或設定錯誤。"
+
+  - name: stanquant-slo
+    rules:
+      - alert: HighRequestLatencyP99
+        expr: histogram_quantile(0.99, sum(rate(request_duration_ms_bucket[5m])) by (le)) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "請求 p99 延遲過高"
+          description: "p99 請求延遲連續 10 分鐘超過 500ms（SLO 破線）。"
+
+      - alert: HighAuditWriteLatency
+        expr: histogram_quantile(0.99, sum(rate(audit_write_ms_bucket[5m])) by (le)) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "稽核寫入延遲過高"
+          description: "稽核寫入 p99 超過 Charter §14.2 的 20ms 預算。"

@@ -1,0 +1,122 @@
+# ===============================================================
+# Stance Capital · .gitignore
+# 規範：哪些檔案 git 不該追蹤（避免外洩、避免雜訊）
+# ===============================================================
+
+# ---------------- Python ----------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+dist/
+build/
+*.egg-info/
+*.egg
+.tox/
+.nox/
+
+# ---------------- Node / TypeScript ----------------
+node_modules/
+.next/
+.turbo/
+.pnpm-store/
+*.tsbuildinfo
+.npm/
+
+# ---------------- Rust ----------------
+target/
+**/*.rs.bk
+# Cargo.lock 保留：因為 workspace 內有 binaries
+
+# ---------------- C / C++ ----------------
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.dll
+*.exe
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+.cache/
+
+# ---------------- IDE / Editor ----------------
+.vscode/*
+!.vscode/settings.json.example
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------------- OS ----------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------- 🔒 機密資料（最重要）----------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!*.pub.key
+*.p12
+*.pfx
+secrets/
+credentials/
+.secrets/
+**/api_keys.json
+
+# ---------------- 資料 / 日誌 ----------------
+*.parquet
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite
+*.sqlite3
+logs/
+*.log
+data/raw/
+data/processed/
+data/cache/
+
+# ---------------- 暫存 / Claude / 其他 ----------------
+.remember/
+.claude/settings.local.json
+.import_linter_cache/
+tmp/
+.tmp/
+*.bak
+*.tmp
+
+# mutmut 暫存（mutation testing 產物，不入版控）
+.mutmut-cache
+mutants/
+
+# sandbox gate 隔離環境(含官方 SDK wheel，不進 CI)
+.venv-*-gate/
+
+# 券商 SDK 執行期產出：原始行情/連線日誌與收據，含帳號級內容，永不入版控
+log/
+receipts/

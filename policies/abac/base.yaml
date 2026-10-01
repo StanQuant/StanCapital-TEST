@@ -1,0 +1,95 @@
+# =============================================================================
+# Stance Capital · L11 ABAC 基底政策（S06 切片）
+# =============================================================================
+# 模型：白名單（D5 裁定 · fail-closed）——RBAC 先過粗門禁，ABAC 再依情境屬性細審；
+#       未被任何政策命中即 deny-by-default。正常操作須以 allow 政策明列。
+# 衝突解析（D5）：DENY > REQUIRE_APPROVAL > ALLOW。
+# 租戶覆寫（D1）：S26 起租戶可在 DB 加政策，但只能加嚴（deny / require_approval）。
+# 屬性（Architecture §L11 子層 2）：department / region / project /
+#       sensitivity_level（1-5）/ risk_category / requested_resource / requested_action /
+#       role / user_id / tenant_id。
+# =============================================================================
+
+policies:
+  # ---------------------------------------------------------------------------
+  # 第一優先 · DENY（壓過一切；安全紅線）
+  # ---------------------------------------------------------------------------
+  - id: deny-top-secret-mutation
+    effect: deny
+    description: 敏感度 5（最高機密）不可經一般流程寫入/刪除/管理
+    target:
+      - attr: sensitivity_level
+        op: gte
+        value: 5
+      - attr: requested_action
+        op: in
+        value: [write, delete, manage]
+
+  - id: deny-quarantine-department
+    effect: deny
+    description: 風控隔離中的部門禁止一切變更操作
+    target:
+      - attr: department
+        op: eq
+        value: quarantine
+      - attr: requested_action
+        op: in
+        value: [write, delete, manage]
+
+  - id: deny-restricted-region
+    effect: deny
+    description: 受限區域（地緣法遵）不可執行變更操作
+    target:
+      - attr: region
+        op: eq
+        value: restricted
+      - attr: requested_action
+        op: in
+        value: [write, delete, manage]
+
+  # ---------------------------------------------------------------------------
+  # 第二優先 · REQUIRE_APPROVAL（敏感但可審批放行）
+  # ---------------------------------------------------------------------------
+  - id: approval-high-sensitivity-write
+    effect: require_approval
+    description: 敏感度 4 的寫入/刪除需人工審批
+    target:
+      - attr: sensitivity_level
+        op: gte
+        value: 4
+      - attr: requested_action
+        op: in
+        value: [write, delete]
+
+  - id: approval-high-risk-category
+    effect: require_approval
+    description: 高風險類別的變更操作需人工審批
+    target:
+      - attr: risk_category
+        op: eq
+        value: high
+      - attr: requested_action
+        op: in
+        value: [write, delete, manage]
+
+  # ---------------------------------------------------------------------------
+  # 第三優先 · ALLOW（白名單：明確放行已通過 RBAC 的正常操作）
+  # ---------------------------------------------------------------------------
+  - id: allow-read-any
+    effect: allow
+    description: 通過 RBAC 的讀取一律放行（讀不改變狀態）
+    target:
+      - attr: requested_action
+        op: eq
+        value: read
+
+  - id: allow-normal-trading
+    effect: allow
+    description: 一般敏感度（≤3）的寫入/刪除放行
+    target:
+      - attr: sensitivity_level
+        op: lte
+        value: 3
+      - attr: requested_action
+        op: in
+        value: [write, delete]

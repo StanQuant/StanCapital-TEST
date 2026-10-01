@@ -1,0 +1,133 @@
+; ===========================================================
+; import-linter · S01 階段規則
+; 強制 L4 Core (src.core) 不可依賴第三方框架與上層業務模組
+;
+; 上層業務模組（src.persistence / src.execution / ...）目前尚未存在，
+; 等對應切片落地後再加進 forbidden_modules 與 layers contract。
+; ===========================================================
+
+[importlinter]
+root_package = src
+include_external_packages = True
+
+[importlinter:contract:forbidden-third-party]
+name = L4 Core 禁止 import 第三方框架（DB / Web / SDK）
+type = forbidden
+source_modules =
+    src.core
+forbidden_modules =
+    sqlalchemy
+    fastapi
+    starlette
+    redis
+    httpx
+    requests
+    openai
+    anthropic
+    pandas
+    numpy
+allow_indirect_imports = False
+
+[importlinter:contract:l4-not-import-upper]
+name = L4 Core 禁止 import 上層模組(S02 persistence / S03 messaging / S04 governance / S11 data)
+type = forbidden
+source_modules =
+    src.core
+forbidden_modules =
+    src.persistence
+    src.messaging
+    src.governance
+    src.data
+allow_indirect_imports = False
+
+[importlinter:contract:s11-data-layer-direction]
+name = L2 Data 供應層依賴單向(可用 core/observability/vault;禁 import 治理與訊息實作，S11 規格 §16.4)
+type = forbidden
+source_modules =
+    src.data
+forbidden_modules =
+    src.governance
+    src.persistence
+    src.messaging
+allow_indirect_imports = False
+
+[importlinter:contract:l5-not-import-l11]
+name = L5/L4 實作層禁止 import L11 governance(依賴方向只能 L11 → L5，S04 規格 §2)
+type = forbidden
+source_modules =
+    src.persistence
+    src.messaging
+forbidden_modules =
+    src.governance
+allow_indirect_imports = False
+
+[importlinter:contract:rbac-not-import-audit]
+name = L11 RBAC 禁止反向 import Audit(依賴方向只能 audit → rbac，S05 規格 §2)
+type = forbidden
+source_modules =
+    src.governance.rbac
+forbidden_modules =
+    src.governance.audit
+allow_indirect_imports = False
+
+[importlinter:contract:abac-not-import-audit]
+name = L11 ABAC 禁止 import Audit(評估器須純淨;稽核編排放 governance 根的守門，S06 規格 §2)
+type = forbidden
+source_modules =
+    src.governance.abac
+forbidden_modules =
+    src.governance.audit
+allow_indirect_imports = False
+
+[importlinter:contract:s07-atr-core-not-import-audit]
+name = L10 ATR 核心禁止 import Audit / AccessGuard(稽核編排只能放 guard，S07 規格 §6.4)
+type = forbidden
+source_modules =
+    src.security.atr.engine
+    src.security.atr.response
+    src.security.atr.rulebook
+    src.security.atr.rules
+    src.security.atr.types
+forbidden_modules =
+    src.governance.audit
+    src.governance.access_guard
+allow_indirect_imports = False
+
+[importlinter:contract:s08-policy-core-not-import-governance]
+name = L10 Policy 核心禁止 import Governance / Audit / ATR Guard(稽核與 ATR 編排只能放 guard，S08 規格 §10)
+type = forbidden
+source_modules =
+    src.security.policy.dsl
+    src.security.policy.evaluator
+    src.security.policy.expressions
+    src.security.policy.types
+    src.security.policy.versioning
+    src.security.policy.approval
+forbidden_modules =
+    src.governance
+    src.security.atr.guard
+allow_indirect_imports = False
+
+[importlinter:contract:s09-observability-bottom-layer]
+name = L9 Observability 為最底層,禁止 import 任何上層 app 模組(接線用 duck typing,S09 規格 §4)
+type = forbidden
+source_modules =
+    src.observability
+forbidden_modules =
+    src.core
+    src.persistence
+    src.messaging
+    src.governance
+    src.security
+allow_indirect_imports = False
+
+[importlinter:contract:s10-vault-core-not-import-governance]
+name = L10 Vault 核心禁止 import Governance / ATR Guard / Policy Guard(授權與稽核編排留在 Gateway/Guard)
+type = forbidden
+source_modules =
+    src.security.vault
+forbidden_modules =
+    src.governance
+    src.security.atr.guard
+    src.security.policy.guard
+allow_indirect_imports = False

@@ -1,0 +1,57 @@
+rules:
+  - code: T001
+    category: Privilege Escalation
+    risk_category: privilege_escalation
+    weight: 80
+    enabled: true
+    version: 1
+    description: sudo/root/permission elevation/policy bypass
+  - code: T002
+    category: Sensitive File Access
+    risk_category: sensitive_file_access
+    weight: 75
+    enabled: true
+    version: 1
+    description: SSH keys/API keys/secrets/credentials/certificates
+  - code: T003
+    category: Mass File Operations
+    risk_category: mass_file_operations
+    weight: 65
+    enabled: true
+    version: 1
+    description: mass deletion/overwrite/relocation
+  - code: T004
+    category: Data Exfiltration
+    risk_category: data_exfiltration
+    weight: 80
+    enabled: true
+    version: 1
+    description: external uploads/cloud exports/unapproved API transmission
+  - code: T005
+    category: Prompt Injection
+    risk_category: prompt_injection
+    weight: 55
+    enabled: true
+    version: 1
+    description: system prompt override/instruction hijacking/tool manipulation
+  - code: T006
+    category: Autonomous Replication
+    risk_category: autonomous_replication
+    weight: 85
+    enabled: true
+    version: 1
+    description: unauthorized agent creation/workflow duplication/recursive spawning
+  - code: T007
+    category: Tool Abuse
+    risk_category: tool_abuse
+    weight: 45
+    enabled: true
+    version: 1
+    description: excessive tool invocation/unexpected execution patterns
+  - code: T008
+    category: Governance Bypass
+    risk_category: governance_bypass
+    weight: 90
+    enabled: true
+    version: 1
+    description: audit avoidance/approval bypass/permission circumvention

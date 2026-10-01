@@ -1,0 +1,37 @@
+schema_version: 1
+policy_set_id: security-base
+version: 2026.06.23-001
+scope:
+  tenant_id: stanley
+  level: tenant
+rules:
+  - id: deny-critical-external-upload
+    effect: deny
+    description: 高風險或高敏感資源禁止外部上傳
+    when:
+      any:
+        - expr: action == "external_upload" and resource.sensitivity_level >= 4
+        - expr: action == "external_upload" and atr.risk_score >= 81
+
+  - id: approval-real-order-high-risk
+    effect: require_approval
+    description: 高風險真實下單必須人工審批
+    approval:
+      approver_role: security_officer
+      timeout_seconds: 900
+      escalation_role: compliance_officer
+    when:
+      all:
+        - expr: action == "submit_real_order"
+        - expr: atr.risk_score >= 61
+
+  - id: allow-research-analysis
+    effect: allow
+    description: 研究部門可讀低敏感度研究資料
+    limits:
+      output_tokens_per_day: 1000000
+    when:
+      all:
+        - expr: department == "research"
+        - expr: action in ["read_documents", "perform_analysis"]
+        - expr: resource.sensitivity_level <= 3

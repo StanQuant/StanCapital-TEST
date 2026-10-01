@@ -1,0 +1,48 @@
+# OTEL Collector · 統一接收 App 遙測並分流到三後端
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  # 防護：屬性層級再擋一次敏感欄位（App 端 redaction 已做，這是縱深防禦）
+  attributes/redact:
+    actions:
+      - key: password
+        action: delete
+      - key: authorization
+        action: delete
+      - key: api_key
+        action: delete
+
+exporters:
+  # traces → Tempo
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  # metrics → 由 Prometheus 來抓本 exporter
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  # logs → Loki（OTLP 原生端點）
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/redact, batch]
+      exporters: [otlp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [attributes/redact, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [attributes/redact, batch]
+      exporters: [otlphttp/loki]

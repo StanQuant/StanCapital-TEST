@@ -1,0 +1,220 @@
+# ===============================================================
+# Stance Capital · Python 專案設定
+# 使用 uv 管理依賴，Python 3.12+，mypy strict，100% 覆蓋率政策
+# ===============================================================
+
+[project]
+name = "stanquant-app"
+version = "0.1.0"
+description = "Enterprise Agent-Native Quant OS · 商業級量化交易平台"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "Stanley" }]
+
+# 依賴最初為空，每個切片啟動時依需要加入
+# S01: python-ulid 用於 order_id / event_id / fill_id 等識別符（可排序、index 友善）
+dependencies = [
+    "alembic>=1.18.4",
+    "asyncpg>=0.31.0",
+    "opentelemetry-api>=1.43.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.43.0",
+    "opentelemetry-sdk>=1.43.0",
+    "python-ulid>=3.0.0",
+    "pyyaml>=6.0.3",
+    "redis>=5",
+    "sqlalchemy[asyncio]>=2.0",
+    "structlog>=26.1.0",
+    "tenacity>=9.1.4",
+]
+
+[project.optional-dependencies]
+# 開發工具
+dev = [
+    "ruff>=0.8.4",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.1",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-xdist>=3.6.1",
+    "hypothesis>=6.122.0",
+    "mutmut>=3.2.0",
+    "import-linter>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+# ---------------- ruff（lint + format）----------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# 啟用大部分規則，但對註解類規則較寬鬆（因使用者要求簡潔明瞭即可）
+select = [
+    "E", "W",     # pycodestyle
+    "F",          # pyflakes
+    "I",          # isort
+    "B",          # bugbear
+    "C4",         # comprehensions
+    "UP",         # pyupgrade
+    "ASYNC",      # async checks
+    "S",          # bandit (security)
+    "T20",        # 禁用 print (強制 logging)
+    "RUF",        # ruff-specific
+]
+ignore = [
+    "E501",       # 行長度由 formatter 處理
+    "S101",       # 允許 assert（測試用）
+    "RUF001",     # 中文全形標點誤報（專案規定中文註解，見 ClaudeC §2）
+    "RUF002",     # 同上（docstring）
+    "RUF003",     # 同上（comment）
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106"]  # 測試允許 assert 與寫死密碼
+"scripts/**/*.py" = ["T20", "S105", "S106"]  # demo/演練腳本的輸出就是 print 給人看的
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ---------------- mypy（型別檢查，strict 模式）----------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false  # 測試允許較寬鬆的型別
+
+# ---------------- pytest ----------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=100",   # 🎯 100% 覆蓋率閘門
+]
+asyncio_mode = "auto"
+markers = [
+    "slow: 測試需要較長時間",
+    "integration: 整合測試（需 docker / 外部服務）",
+    "e2e: 端對端測試",
+    "chaos: 混沌測試",
+    "account_gated: 真連線測試——需 Stanley 明確同意 + 憑證在 S10 vault 就位才可 opt-in（預設不跑，見 S11 規格 §15）",
+]
+
+# ---------------- coverage 例外白名單 ----------------
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "@abstractmethod",
+]
+# 詳細例外政策見 docs/coverage_exceptions.md
+
+# ---------------- mutmut（mutation testing）----------------
+# ⚠️ mutmut 3.x 與本專案的 `import src.xxx` 寫法不相容(其 trampoline 硬性檢查
+# 模組名不得以 src. 開頭，2026-06-11 S02 實測)。DoD #3 一律用 mutmut 2.5.1 經 uvx 跑。
+# ⚠️ S04 教訓(2026-06-12)三條:
+# 1. runner 必須包 sh -c '... || exit 1'——匯入崩潰時 pytest 退出碼是 2/4，
+#    mutmut 2.5.1 只認 1 為殺死，不包就把死透的 mutant 誤判成存活。
+# 2. mutation 執行期間同機禁跑重活(測試/基準/docker)，否則計時全亂。
+# 3. 「可疑🤔」重跑仍可疑 → 手動植入該變異跑測試實證(S04: 7 個可疑全是假警報)。
+#
+#   uvx "mutmut==2.5.1" run \
+#     --paths-to-mutate=src/governance/rbac/checker.py \
+#     --runner="sh -c 'uv run pytest --no-cov -q -x tests/governance/test_checker.py || exit 1'" \
+#     --tests-dir=tests/governance
+#
+# S02 結果: 37 mutants / 36 killed = 97.3%(唯一存活 #19 是型別註解等價變異，
+# 因 from __future__ import annotations 執行期不評估，原理上不可殺)。
+# S02 範圍: 只對含業務邏輯的 resilience.py；models/mappers/repository 為純宣告/CRUD，N/A。
+# S04 結果: 233 mutants / 230 killed = 98.7%(豁免 3 個同類型別註解等價變異:
+# checker #6 / repository #140 #143)。範圍: governance 六檔全跑。
+[tool.mutmut]
+# 注意: 本專案的 mutation testing 一律用 mutmut 2.5.1 經 uvx 跑(3.x 與 import src. 佈局
+# 不相容，S02 教訓)，[tool.mutmut] 是 3.x 欄位、僅作文件記錄，實際指令走命令列。
+# S05 血淚版正確指令(三重防護，S05 教訓):
+#   1. runner 用 .venv/bin/python(絕對路徑)而非 uvx 環境的 python
+#      ——uvx 環境的 pytest-asyncio 跑 async 測試會死鎖卡死(S05 踩雷 30 分鐘)
+#   2. runner 跑「對應測試檔」而非全套件，且包 sh -c '... || exit 1'(退出碼正規化，S04)
+#   3. runner 加 --timeout=30(需 uv pip install pytest-timeout)防「無限迴圈變異」卡死
+#   注意: mutmut 中斷會殘留 mutant 污染 src,事後務必跑 baseline 確認還原(git diff)
+#
+#   VENV=/abs/path/.venv/bin/python  # 絕對路徑
+#   uvx --with-editable . --with pytest --with pytest-asyncio --with pytest-cov \
+#       --with aiosqlite mutmut==2.5.1 run \
+#       --paths-to-mutate "src/governance/audit/merkle.py:...:decorator.py" \
+#       --tests-dir tests/governance/audit \
+#       --runner "sh -c '$VENV -m pytest <對應測試檔...> -x -q -p no:cacheprovider \
+# --no-cov --timeout=30 || exit 1'"
+#
+# 純宣告檔(types.py / models.py / mappers.py / errors.py / __init__.py)免跑(S01 教訓)。
+# S05 實測: 357/372 = 96.0% killed,15 等價變異豁免(型別別名/Literal 註解/不可觀察初始值/
+# keyset 多撈/並行 except 不可達),排除後有效殺死率 100%。
+source_paths = ["src/persistence/resilience.py"]
+pytest_add_cli_args = ["--no-cov"]
+pytest_add_cli_args_test_selection = ["tests/persistence/test_resilience.py"]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+    "hypothesis>=6.122.0",
+    "import-linter>=2.0",
+    "mutmut>=3.2.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.1",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.6.1",
+    "ruff>=0.8.4",
+    "types-pyyaml>=6.0.12.20260518",
+]
